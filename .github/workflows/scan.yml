@@ -20,16 +20,29 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
           trivy --version
 
-      - name: Scan Images with Trivy
-        id: trivy-scan
+      - name: Scan httpd:2.4.49
         run: |
-          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-httpd.json "httpd:2.4.49"
-          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-nginx.json "nginx:1.15"
-          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-mysql.json "mysql:5.5"
-          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-wordpress.json "wordpress:4.9.8"
-          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-dvwa.json "vulnerables/web-dvwa"
-          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-juice.json "bkimminich/juice-shop"
-        continue-on-error: true
+          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-httpd.json "httpd:2.4.49" || true
+
+      - name: Scan nginx:1.15
+        run: |
+          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-nginx.json "nginx:1.15" || true
+
+      - name: Scan mysql:5.5
+        run: |
+          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-mysql.json "mysql:5.5" || true
+
+      - name: Scan wordpress:4.9.8
+        run: |
+          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-wordpress.json "wordpress:4.9.8" || true
+
+      - name: Scan vulnerables/web-dvwa
+        run: |
+          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-dvwa.json "vulnerables/web-dvwa" || true
+
+      - name: Scan bkimminich/juice-shop
+        run: |
+          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-juice.json "bkimminich/juice-shop" || true
 
       - name: Upload Trivy Reports
         uses: actions/upload-artifact@v4
@@ -39,10 +52,17 @@ jobs:
 
       - name: Check Scan Results
         run: |
-          if [ ${{ steps.trivy-scan.outcome }} == "failure" ]; then
-            echo "Critical or High vulnerabilities found in one or more images."
-            cat trivy-report-*.json
-            exit 1
+          if ls trivy-report-*.json >/dev/null 2>&1; then
+            echo "Scan reports generated. Checking for vulnerabilities..."
+            for report in trivy-report-*.json; do
+              if grep -q '"Severity": "CRITICAL"' "$report" || grep -q '"Severity": "HIGH"' "$report"; then
+                echo "Critical or High vulnerabilities found in $report"
+              else
+                echo "No Critical or High vulnerabilities in $report"
+              fi
+            done
+            grep -q '"Severity": "CRITICAL"' trivy-report-*.json || grep -q '"Severity": "HIGH"' trivy-report-*.json && exit 1
           else
-            echo "No Critical or High vulnerabilities found in any images."
+            echo "No reports generated. Something went wrong."
+            exit 1
           fi
