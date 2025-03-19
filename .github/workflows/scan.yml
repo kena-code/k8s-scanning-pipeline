@@ -1,0 +1,48 @@
+name: Scan Container Images
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  scan-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy --version
+
+      - name: Scan Image with Trivy
+        id: trivy-scan
+        run: |
+          trivy image \
+            --exit-code 1 \
+            --severity CRITICAL,HIGH \
+            --format json \
+            -o trivy-report.json \
+            "docker.io/library/node:18"
+        continue-on-error: true
+
+      - name: Upload Trivy Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.json
+
+      - name: Check Scan Result
+        run: |
+          if [ ${{ steps.trivy-scan.outcome }} == "failure" ]; then
+            echo "Critical or High vulnerabilities found."
+            cat trivy-report.json
+            exit 1
+          else
+            echo "No Critical or High vulnerabilities found."
+          fi
