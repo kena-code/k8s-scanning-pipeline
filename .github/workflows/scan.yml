@@ -20,29 +20,29 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
           trivy --version
 
-      - name: Scan Image with Trivy
+      - name: Scan Images with Trivy
         id: trivy-scan
         run: |
-          trivy image \
-            --exit-code 1 \
-            --severity CRITICAL,HIGH \
-            --format json \
-            -o trivy-report.json \
-            "docker.io/library/node:18"
+          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-httpd.json "httpd:2.4.49"
+          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-nginx.json "nginx:1.15"
+          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-mysql.json "mysql:5.5"
+          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-wordpress.json "wordpress:4.9.8"
+          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-dvwa.json "vulnerables/web-dvwa"
+          trivy image --exit-code 1 --severity CRITICAL,HIGH --format json -o trivy-report-juice.json "bkimminich/juice-shop"
         continue-on-error: true
 
-      - name: Upload Trivy Report
+      - name: Upload Trivy Reports
         uses: actions/upload-artifact@v4
         with:
-          name: trivy-report
-          path: trivy-report.json
+          name: trivy-reports
+          path: trivy-report-*.json
 
-      - name: Check Scan Result
+      - name: Check Scan Results
         run: |
           if [ ${{ steps.trivy-scan.outcome }} == "failure" ]; then
-            echo "Critical or High vulnerabilities found."
-            cat trivy-report.json
+            echo "Critical or High vulnerabilities found in one or more images."
+            cat trivy-report-*.json
             exit 1
           else
-            echo "No Critical or High vulnerabilities found."
+            echo "No Critical or High vulnerabilities found in any images."
           fi
