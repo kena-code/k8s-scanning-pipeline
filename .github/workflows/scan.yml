@@ -44,6 +44,61 @@ jobs:
         run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-juice.json "bkimminich/juice-shop" || true
 
+      - name: Install Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip
+
+      - name: Create Analysis Script
+        run: |
+          cat << 'EOF' > analyze_trivy.py
+          import json
+          import os
+
+          # List of images
+          images = [
+              "httpd:2.4.49",
+              "nginx:1.15",
+              "mysql:5.5",
+              "wordpress:4.9.8",
+              "vulnerables/web-dvwa",
+              "bkimminich/juice-shop"
+          ]
+
+          # Initialize stats
+          stats = {image: {"CRITICAL": 0, "HIGH": 0} for image in images}
+
+          # Process each report
+          for image in images:
+              report_file = f"trivy-report-{image.split('/')[0].split(':')[0]}.json"
+              if os.path.exists(report_file):
+                  with open(report_file, 'r') as f:
+                      data = json.load(f)
+                      for result in data.get("Results", []):
+                          for vuln in result.get("Vulnerabilities", []):
+                              severity = vuln.get("Severity")
+                              if severity in ["CRITICAL", "HIGH"]:
+                                  stats[image][severity] += 1
+              else:
+                  print(f"Report not found for {image}")
+
+          # Print stats
+          print("Vulnerability Statistics:")
+          total_critical = 0
+          total_high = 0
+          for image, counts in stats.items():
+              critical = counts["CRITICAL"]
+              high = counts["HIGH"]
+              total_critical += critical
+              total_high += high
+              print(f"{image}: {critical} Critical, {high} High")
+          print(f"\nTotal: {total_critical} Critical, {total_high} High")
+          EOF
+
+      - name: Run Analysis Script
+        run: |
+          python3 analyze_trivy.py
+
       - name: Upload Trivy Reports
         uses: actions/upload-artifact@v4
         with:
