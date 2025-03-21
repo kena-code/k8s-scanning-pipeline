@@ -44,10 +44,16 @@ jobs:
         run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-juice.json "bkimminich/juice-shop" || true
 
+      - name: List Reports
+        run: |
+          echo "Generated reports:"
+          ls -l *.json || echo "No JSON files found"
+
       - name: Install Python
         run: |
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip
+          python3 --version || echo "Python install failed"
 
       - name: Create Analysis Script
         run: |
@@ -55,35 +61,40 @@ jobs:
           import json
           import os
 
-          # List of images
-          images = [
-              "httpd:2.4.49",
-              "nginx:1.15",
-              "mysql:5.5",
-              "wordpress:4.9.8",
-              "vulnerables/web-dvwa",
-              "bkimminich/juice-shop"
-          ]
+          image_to_report = {
+              "httpd:2.4.49": "trivy-report-httpd.json",
+              "nginx:1.15": "trivy-report-nginx.json",
+              "mysql:5.5": "trivy-report-mysql.json",
+              "wordpress:4.9.8": "trivy-report-wordpress.json",
+              "vulnerables/web-dvwa": "trivy-report-dvwa.json",
+              "bkimminich/juice-shop": "trivy-report-juice.json"
+          }
 
-          # Initialize stats
-          stats = {image: {"CRITICAL": 0, "HIGH": 0} for image in images}
+          stats = {image: {"CRITICAL": 0, "HIGH": 0} for image in image_to_report.keys()}
 
-          # Process each report
-          for image in images:
-              report_file = f"trivy-report-{image.split('/')[0].split(':')[0]}.json"
+          for image, report_file in image_to_report.items():
+              print(f"Processing {report_file} for {image}")
               if os.path.exists(report_file):
-                  with open(report_file, 'r') as f:
-                      data = json.load(f)
-                      for result in data.get("Results", []):
-                          for vuln in result.get("Vulnerabilities", []):
-                              severity = vuln.get("Severity")
-                              if severity in ["CRITICAL", "HIGH"]:
-                                  stats[image][severity] += 1
+                  try:
+                      with open(report_file, 'r') as f:
+                          data = json.load(f)
+                          print(f"Loaded {report_file} - Keys: {list(data.keys())}")
+                          results = data.get("Results", [])
+                          if not results:
+                              print(f"No 'Results' in {report_file}")
+                          for result in results:
+                              vulns = result.get("Vulnerabilities", [])
+                              print(f"Found {len(vulns)} vulnerabilities in {result.get('Target', 'unknown')}")
+                              for vuln in vulns:
+                                  severity = vuln.get("Severity")
+                                  if severity in ["CRITICAL", "HIGH"]:
+                                      stats[image][severity] += 1
+                  except json.JSONDecodeError:
+                      print(f"Failed to parse {report_file} - Invalid JSON")
               else:
-                  print(f"Report not found for {image}")
+                  print(f"Report not found: {report_file}")
 
-          # Print stats
-          print("Vulnerability Statistics:")
+          print("\nVulnerability Statistics:")
           total_critical = 0
           total_high = 0
           for image, counts in stats.items():
@@ -97,7 +108,7 @@ jobs:
 
       - name: Run Analysis Script
         run: |
-          python3 analyze_trivy.py
+          python3 analyze_trivy.py || echo "Script failed—check Python setup"
 
       - name: Upload Trivy Reports
         uses: actions/upload-artifact@v4
