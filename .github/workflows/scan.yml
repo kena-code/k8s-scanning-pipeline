@@ -1,4 +1,4 @@
-name: Scan Container Images with Multiple Tools
+name: Scan Container Images
 
 on:
   push:
@@ -15,81 +15,48 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Install Trivy
       - name: Install Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-          trivy --version || echo "Trivy install failed, continuing anyway"
+          trivy --version
 
-      # Install Grype
-      - name: Install Grype (Anchore)
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-          grype version || echo "Grype install failed, continuing anyway"
-
-      # Set Up Clair with Specific Version
-      - name: Set Up Clair
-        run: |
-          docker run -d --name clair-db postgres:13 || echo "Postgres setup failed"
-          docker run -d --name clair --link clair-db:postgres -p 6060:6060 quay.io/clair/clair:v4.7.0 || echo "Clair setup failed"
-          sleep 30  # Give Clair more time to start
-        continue-on-error: true  # Keep going even if Clair fails
-
-      # Scan with Trivy
-      - name: Scan with Trivy
+      - name: Scan httpd:2.4.49
         run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-httpd.json "httpd:2.4.49" || true
+
+      - name: Scan nginx:1.15
+        run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-nginx.json "nginx:1.15" || true
+
+      - name: Scan mysql:5.5
+        run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-mysql.json "mysql:5.5" || true
+
+      - name: Scan wordpress:4.9.8
+        run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-wordpress.json "wordpress:4.9.8" || true
+
+      - name: Scan vulnerables/web-dvwa
+        run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-dvwa.json "vulnerables/web-dvwa" || true
+
+      - name: Scan bkimminich/juice-shop
+        run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-juice.json "bkimminich/juice-shop" || true
 
-      # Scan with Grype
-      - name: Scan with Grype
-        run: |
-          grype httpd:2.4.49 -o json > grype-report-httpd.json || true
-          grype nginx:1.15 -o json > grype-report-nginx.json || true
-          grype mysql:5.5 -o json > grype-report-mysql.json || true
-          grype wordpress:4.9.8 -o json > grype-report-wordpress.json || true
-          grype vulnerables/web-dvwa -o json > grype-report-dvwa.json || true
-          grype bkimminich/juice-shop -o json > grype-report-juice.json || true
-
-      # Install and Scan with Clair (Klar)
-      - name: Install Klar (Clair Client)
-        run: |
-          wget https://github.com/optiopay/klar/releases/download/v2.4.0/klar-2.4.0-linux-amd64 -O /usr/local/bin/klar || echo "Klar download failed"
-          chmod +x /usr/local/bin/klar
-        continue-on-error: true
-
-      - name: Scan with Clair
-        run: |
-          CLAIR_ADDR=http://localhost:6060 klar httpd:2.4.49 > clair-report-httpd.json || true
-          CLAIR_ADDR=http://localhost:6060 klar nginx:1.15 > clair-report-nginx.json || true
-          CLAIR_ADDR=http://localhost:6060 klar mysql:5.5 > clair-report-mysql.json || true
-          CLAIR_ADDR=http://localhost:6060 klar wordpress:4.9.8 > clair-report-wordpress.json || true
-          CLAIR_ADDR=http://localhost:6060 klar vulnerables/web-dvwa > clair-report-dvwa.json || true
-          CLAIR_ADDR=http://localhost:6060 klar bkimminich/juice-shop > clair-report-juice.json || true
-        continue-on-error: true
-
-      # Upload Reports
-      - name: Upload All Reports
+      - name: Upload Trivy Reports
         uses: actions/upload-artifact@v4
         with:
-          name: all-scanner-reports
-          path: |
-            trivy-report-*.json
-            grype-report-*.json
-            clair-report-*.json
+          name: trivy-reports
+          path: trivy-report-*.json
 
-      # Check Results
       - name: Check Scan Results
         run: |
           echo "Checking results..."
           has_vulnerabilities=false
-          for report in trivy-report-*.json grype-report-*.json clair-report-*.json; do
+          for report in trivy-report-*.json; do
             if [ -f "$report" ]; then
-              if grep -q '"Severity": "CRITICAL"\|"Severity": "HIGH"\|"severity": "Critical"\|"severity": "High"' "$report"; then
+              if grep -q '"Severity": "CRITICAL"\|"Severity": "HIGH"' "$report"; then
                 echo "Critical or High vulnerabilities found in $report"
                 has_vulnerabilities=true
               else
