@@ -20,35 +20,35 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
           trivy --version
 
-      # Image Scans
+      # Image Scans (High/Critical only)
       - name: Scan httpd:2.4.49
         run: |
-          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-httpd.json "httpd:2.4.49" || true
+          trivy image --severity HIGH,CRITICAL --format json -o trivy-report-httpd.json "httpd:2.4.49" || true
 
       - name: Scan nginx:1.15
         run: |
-          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-nginx.json "nginx:1.15" || true
+          trivy image --severity HIGH,CRITICAL --format json -o trivy-report-nginx.json "nginx:1.15" || true
 
       - name: Scan mysql:5.5
         run: |
-          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-mysql.json "mysql:5.5" || true
+          trivy image --severity HIGH,CRITICAL --format json -o trivy-report-mysql.json "mysql:5.5" || true
 
       - name: Scan wordpress:4.9.8
         run: |
-          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-wordpress.json "wordpress:4.9.8" || true
+          trivy image --severity HIGH,CRITICAL --format json -o trivy-report-wordpress.json "wordpress:4.9.8" || true
 
       - name: Scan vulnerables/web-dvwa
         run: |
-          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-dvwa.json "vulnerables/web-dvwa" || true
+          trivy image --severity HIGH,CRITICAL --format json -o trivy-report-dvwa.json "vulnerables/web-dvwa" || true
 
       - name: Scan bkimminich/juice-shop
         run: |
-          trivy image --severity CRITICAL,HIGH --format json -o trivy-report-juice.json "bkimminich/juice-shop" || true
+          trivy image --severity HIGH,CRITICAL --format json -o trivy-report-juice.json "bkimminich/juice-shop" || true
 
-      # Kubernetes Config Scan
+      # Kubernetes Config Scan (all severities)
       - name: Scan Kubernetes Configs
         run: |
-          trivy config --severity CRITICAL,HIGH --format json -o trivy-report-k8s.json ./k8s || echo "Kubernetes scan failed"
+          trivy config --format json -o trivy-report-k8s.json ./k8s || echo "Kubernetes scan failed"
 
       - name: List Reports
         run: |
@@ -76,9 +76,11 @@ jobs:
               "bkimminich/juice-shop": "trivy-report-juice.json"
           }
 
-          stats = {image: {"CRITICAL": 0, "HIGH": 0} for image in image_to_report.keys()}
+          image_severities = ["HIGH", "CRITICAL"]
+          k8s_severities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+          stats = {image: {sev: 0 for sev in image_severities} for image in image_to_report.keys()}
 
-          # Image reports
+          # Image reports (High/Critical only)
           for image, report_file in image_to_report.items():
               print(f"Processing {report_file} for {image}")
               if os.path.exists(report_file):
@@ -94,7 +96,7 @@ jobs:
                               print(f"Found {len(vulns)} vulnerabilities in {result.get('Target', 'unknown')}")
                               for vuln in vulns:
                                   severity = vuln.get("Severity")
-                                  if severity in ["CRITICAL", "HIGH"]:
+                                  if severity in image_severities:
                                       stats[image][severity] += 1
                   except json.JSONDecodeError:
                       print(f"Failed to parse {report_file} - Invalid JSON")
@@ -103,20 +105,19 @@ jobs:
 
           # Image stats
           print("\nImage Vulnerability Statistics:")
-          total_image_critical = 0
-          total_image_high = 0
+          total_stats = {sev: 0 for sev in image_severities}
           for image, counts in stats.items():
-              critical = counts["CRITICAL"]
-              high = counts["HIGH"]
-              total_image_critical += critical
-              total_image_high += high
-              print(f"{image}: {critical} Critical, {high} High")
-          print(f"Total Image Vulnerabilities: {total_image_critical} Critical, {total_image_high} High")
+              line = f"{image}: "
+              line += ", ".join(f"{counts[sev]} {sev}" for sev in image_severities)
+              print(line)
+              for sev in image_severities:
+                  total_stats[sev] += counts[sev]
+          print("Total Image Vulnerabilities: " + ", ".join(f"{total_stats[sev]} {sev}" for sev in image_severities))
 
-          # Kubernetes report
+          # Kubernetes report (all severities)
           k8s_report = "trivy-report-k8s.json"
           print(f"\nProcessing {k8s_report}")
-          k8s_stats = {"CRITICAL": 0, "HIGH": 0}
+          k8s_stats = {sev: 0 for sev in k8s_severities}
           if os.path.exists(k8s_report):
               try:
                   with open(k8s_report, 'r') as f:
@@ -138,7 +139,7 @@ jobs:
                                   title = misconfig.get("Title", "No title")
                                   resolution = misconfig.get("Resolution", "No resolution provided")
                                   print(f"- Severity: {severity}, Misconfiguration: \"{title}\", Resolution: \"{resolution}\"")
-                                  if severity in ["CRITICAL", "HIGH"]:
+                                  if severity in k8s_severities:
                                       k8s_stats[severity] += 1
                       if not has_misconfigs:
                           print("No misconfigurations found in Kubernetes configs")
@@ -149,9 +150,7 @@ jobs:
 
           # Kubernetes stats summary
           print("\nKubernetes Config Statistics:")
-          critical_k8s = k8s_stats["CRITICAL"]
-          high_k8s = k8s_stats["HIGH"]
-          print(f"Kubernetes Configs: {critical_k8s} Critical, {high_k8s} High")
+          print("Kubernetes Configs: " + ", ".join(f"{k8s_stats[sev]} {sev}" for sev in k8s_severities))
           EOF
 
       - name: Run Analysis Script
