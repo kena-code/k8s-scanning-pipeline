@@ -1,4 +1,4 @@
-name: Scan Container Images
+name: Scan Container Images and Kubernetes Configs
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  scan-images:
+  scan-images-and-configs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -20,6 +20,7 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
           trivy --version
 
+      # Image Scans
       - name: Scan httpd:2.4.49
         run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-httpd.json "httpd:2.4.49" || true
@@ -43,6 +44,11 @@ jobs:
       - name: Scan bkimminich/juice-shop
         run: |
           trivy image --severity CRITICAL,HIGH --format json -o trivy-report-juice.json "bkimminich/juice-shop" || true
+
+      # Kubernetes Config Scan
+      - name: Scan Kubernetes Configs
+        run: |
+          trivy config --severity CRITICAL,HIGH --format json -o trivy-report-k8s.json ./k8s || echo "Kubernetes scan failed"
 
       - name: List Reports
         run: |
@@ -71,7 +77,9 @@ jobs:
           }
 
           stats = {image: {"CRITICAL": 0, "HIGH": 0} for image in image_to_report.keys()}
+          k8s_stats = {"CRITICAL": 0, "HIGH": 0}
 
+          # Image reports
           for image, report_file in image_to_report.items():
               print(f"Processing {report_file} for {image}")
               if os.path.exists(report_file):
@@ -94,16 +102,43 @@ jobs:
               else:
                   print(f"Report not found: {report_file}")
 
-          print("\nVulnerability Statistics:")
-          total_critical = 0
-          total_high = 0
+          # Kubernetes report
+          k8s_report = "trivy-report-k8s.json"
+          print(f"\nProcessing {k8s_report}")
+          if os.path.exists(k8s_report):
+              try:
+                  with open(k8s_report, 'r') as f:
+                      data = json.load(f)
+                      print(f"Loaded {k8s_report} - Keys: {list(data.keys())}")
+                      results = data.get("Results", [])
+                      if not results:
+                          print(f"No 'Results' in {k8s_report}")
+                      for result in results:
+                          misconfigs = result.get("Misconfigurations", [])
+                          print(f"Found {len(misconfigs)} misconfigurations in {result.get('Target', 'unknown')}")
+                          for misconfig in misconfigs:
+                              severity = misconfig.get("Severity")
+                              if severity in ["CRITICAL", "HIGH"]:
+                                  k8s_stats[severity] += 1
+              except json.JSONDecodeError:
+                  print(f"Failed to parse {k8s_report} - Invalid JSON")
+          else:
+              print(f"Report not found: {k8s_report}")
+
+          # Print stats
+          print("\nImage Vulnerability Statistics:")
+          total_image_critical = 0
+          total_image_high = 0
           for image, counts in stats.items():
               critical = counts["CRITICAL"]
               high = counts["HIGH"]
-              total_critical += critical
-              total_high += high
+              total_image_critical += critical
+              total_image_high += high
               print(f"{image}: {critical} Critical, {high} High")
-          print(f"\nTotal: {total_critical} Critical, {total_high} High")
+          print(f"Total Image Vulnerabilities: {total_image_critical} Critical, {total_image_high} High")
+
+          print("\nKubernetes Config Statistics:")
+          print(f"Kubernetes Configs: {k8s_stats['CRITICAL']} Critical, {k8s_stats['HIGH']} High")
           EOF
 
       - name: Run Analysis Script
