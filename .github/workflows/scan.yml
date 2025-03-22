@@ -77,7 +77,6 @@ jobs:
           }
 
           stats = {image: {"CRITICAL": 0, "HIGH": 0} for image in image_to_report.keys()}
-          k8s_stats = {"CRITICAL": 0, "HIGH": 0}
 
           # Image reports
           for image, report_file in image_to_report.items():
@@ -102,30 +101,7 @@ jobs:
               else:
                   print(f"Report not found: {report_file}")
 
-          # Kubernetes report
-          k8s_report = "trivy-report-k8s.json"
-          print(f"\nProcessing {k8s_report}")
-          if os.path.exists(k8s_report):
-              try:
-                  with open(k8s_report, 'r') as f:
-                      data = json.load(f)
-                      print(f"Loaded {k8s_report} - Keys: {list(data.keys())}")
-                      results = data.get("Results", [])
-                      if not results:
-                          print(f"No 'Results' in {k8s_report}")
-                      for result in results:
-                          misconfigs = result.get("Misconfigurations", [])
-                          print(f"Found {len(misconfigs)} misconfigurations in {result.get('Target', 'unknown')}")
-                          for misconfig in misconfigs:
-                              severity = misconfig.get("Severity")
-                              if severity in ["CRITICAL", "HIGH"]:
-                                  k8s_stats[severity] += 1
-              except json.JSONDecodeError:
-                  print(f"Failed to parse {k8s_report} - Invalid JSON")
-          else:
-              print(f"Report not found: {k8s_report}")
-
-          # Print stats
+          # Image stats
           print("\nImage Vulnerability Statistics:")
           total_image_critical = 0
           total_image_high = 0
@@ -137,8 +113,45 @@ jobs:
               print(f"{image}: {critical} Critical, {high} High")
           print(f"Total Image Vulnerabilities: {total_image_critical} Critical, {total_image_high} High")
 
+          # Kubernetes report
+          k8s_report = "trivy-report-k8s.json"
+          print(f"\nProcessing {k8s_report}")
+          k8s_stats = {"CRITICAL": 0, "HIGH": 0}
+          if os.path.exists(k8s_report):
+              try:
+                  with open(k8s_report, 'r') as f:
+                      data = json.load(f)
+                      print(f"Loaded {k8s_report} - Keys: {list(data.keys())}")
+                      results = data.get("Results", [])
+                      if not results:
+                          print(f"No 'Results' in {k8s_report}")
+                      print("\nKubernetes Config Details:")
+                      has_misconfigs = False
+                      for result in results:
+                          misconfigs = result.get("Misconfigurations", [])
+                          target = result.get("Target", "unknown")
+                          if misconfigs:
+                              has_misconfigs = True
+                              print(f"File: {target}")
+                              for misconfig in misconfigs:
+                                  severity = misconfig.get("Severity", "UNKNOWN")
+                                  title = misconfig.get("Title", "No title")
+                                  resolution = misconfig.get("Resolution", "No resolution provided")
+                                  print(f"- Severity: {severity}, Misconfiguration: \"{title}\", Resolution: \"{resolution}\"")
+                                  if severity in ["CRITICAL", "HIGH"]:
+                                      k8s_stats[severity] += 1
+                      if not has_misconfigs:
+                          print("No misconfigurations found in Kubernetes configs")
+              except json.JSONDecodeError:
+                  print(f"Failed to parse {k8s_report} - Invalid JSON")
+          else:
+              print(f"Report not found: {k8s_report}")
+
+          # Kubernetes stats summary
           print("\nKubernetes Config Statistics:")
-          print(f"Kubernetes Configs: {k8s_stats['CRITICAL']} Critical, {k8s_stats['HIGH']} High")
+          critical_k8s = k8s_stats["CRITICAL"]
+          high_k8s = k8s_stats["HIGH"]
+          print(f"Kubernetes Configs: {critical_k8s} Critical, {high_k8s} High")
           EOF
 
       - name: Run Analysis Script
