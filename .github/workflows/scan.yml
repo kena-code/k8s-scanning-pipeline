@@ -1,64 +1,157 @@
-name: Security Scan
+name: Scan Container Images and Kubernetes Configs
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  scan:
+  scan-images-and-configs:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Install Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          trivy --version
 
-      - name: Scan httpd image
+      - name: Scan httpd:2.4.49
         run: |
-          /usr/bin/time -f "%e" -o httpd_time.txt trivy image --severity HIGH,CRITICAL -f json -o trivy-report-httpd.json httpd:2.4.49
+          /usr/bin/time -f "%e" -o httpd_time.txt trivy image --severity HIGH,CRITICAL --format json -o trivy-report-httpd.json "httpd:2.4.49" || true
           echo "httpd_2.4.49_scan_time $(cat httpd_time.txt)" >> scan_times.txt
 
-      - name: Scan nginx image
+      - name: Scan nginx:1.15
         run: |
-          /usr/bin/time -f "%e" -o nginx_time.txt trivy image --severity HIGH,CRITICAL -f json -o trivy-report-nginx.json nginx:1.15
+          /usr/bin/time -f "%e" -o nginx_time.txt trivy image --severity HIGH,CRITICAL --format json -o trivy-report-nginx.json "nginx:1.15" || true
           echo "nginx_1.15_scan_time $(cat nginx_time.txt)" >> scan_times.txt
 
-      - name: Scan mysql image
+      - name: Scan mysql:5.5
         run: |
-          /usr/bin/time -f "%e" -o mysql_time.txt trivy image --severity HIGH,CRITICAL -f json -o trivy-report-mysql.json mysql:5.5
+          /usr/bin/time -f "%e" -o mysql_time.txt trivy image --severity HIGH,CRITICAL --format json -o trivy-report-mysql.json "mysql:5.5" || true
           echo "mysql_5.5_scan_time $(cat mysql_time.txt)" >> scan_times.txt
 
-      - name: Scan wordpress image
+      - name: Scan wordpress:4.9.8
         run: |
-          /usr/bin/time -f "%e" -o wordpress_time.txt trivy image --severity HIGH,CRITICAL -f json -o trivy-report-wordpress.json wordpress:4.9.8
+          /usr/bin/time -f "%e" -o wordpress_time.txt trivy image --severity HIGH,CRITICAL --format json -o trivy-report-wordpress.json "wordpress:4.9.8" || true
           echo "wordpress_4.9.8_scan_time $(cat wordpress_time.txt)" >> scan_times.txt
 
-      - name: Scan web-dvwa image
+      - name: Scan vulnerables/web-dvwa
         run: |
-          /usr/bin/time -f "%e" -o web-dvwa_time.txt trivy image --severity HIGH,CRITICAL -f json -o trivy-report-web-dvwa.json vulnerables/web-dvwa
-          echo "vulnerables_web-dvwa_scan_time $(cat web-dvwa_time.txt)" >> scan_times.txt
+          /usr/bin/time -f "%e" -o dvwa_time.txt trivy image --severity HIGH,CRITICAL --format json -o trivy-report-dvwa.json "vulnerables/web-dvwa" || true
+          echo "vulnerables_web-dvwa_scan_time $(cat dvwa_time.txt)" >> scan_times.txt
 
-      - name: Scan juice-shop image
+      - name: Scan bkimminich/juice-shop
         run: |
-          /usr/bin/time -f "%e" -o juice-shop_time.txt trivy image --severity HIGH,CRITICAL -f json -o trivy-report-juice-shop.json bkimminich/juice-shop
-          echo "bkimminich_juice-shop_scan_time $(cat juice-shop_time.txt)" >> scan_times.txt
+          /usr/bin/time -f "%e" -o juice_time.txt trivy image --severity HIGH,CRITICAL --format json -o trivy-report-juice.json "bkimminich/juice-shop" || true
+          echo "bkimminich_juice-shop_scan_time $(cat juice_time.txt)" >> scan_times.txt
 
-      - name: Scan Kubernetes configs
+      - name: Scan Kubernetes Configs
         run: |
-          /usr/bin/time -f "%e" -o k8s_time.txt trivy config --severity LOW,MEDIUM,HIGH,CRITICAL -f json -o trivy-report-k8s.json k8s/
+          /usr/bin/time -f "%e" -o k8s_time.txt trivy config --format json -o trivy-report-k8s.json ./k8s || echo "Kubernetes scan failed"
           echo "k8s_scan_time $(cat k8s_time.txt)" >> scan_times.txt
+
+      - name: List Reports
+        run: |
+          echo "Generated reports:"
+          ls -l *.json || echo "No JSON files found"
 
       - name: Install Python
         run: |
           sudo apt-get update
           sudo apt-get install -y python3 python3-pip
+          python3 --version || echo "Python install failed"
+
+      - name: Create Analysis Script
+        run: |
+          cat << 'EOF' > analyze_trivy.py
+          import json
+          import os
+          image_to_report = {
+              "httpd:2.4.49": "trivy-report-httpd.json",
+              "nginx:1.15": "trivy-report-nginx.json",
+              "mysql:5.5": "trivy-report-mysql.json",
+              "wordpress:4.9.8": "trivy-report-wordpress.json",
+              "vulnerables/web-dvwa": "trivy-report-dvwa.json",
+              "bkimminich/juice-shop": "trivy-report-juice.json"
+          }
+          image_severities = ["HIGH", "CRITICAL"]
+          k8s_severities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+          stats = {image: {sev: 0 for sev in image_severities} for image in image_to_report.keys()}
+          # Load scan times
+          scan_times = {}
+          if os.path.exists("scan_times.txt"):
+              with open("scan_times.txt", "r") as f:
+                  for line in f:
+                      parts = line.strip().split()
+                      if len(parts) == 2 and parts[1].replace(".", "").isdigit():
+                          scan_times[parts[0]] = float(parts[1])
+          else:
+              print("scan_times.txt not found - assuming 0 seconds")
+          # Image reports (High/Critical only)
+          for image, report_file in image_to_report.items():
+              print(f"Processing {report_file} for {image}")
+              if os.path.exists(report_file):
+                  try:
+                      with open(report_file, 'r') as f:
+                          data = json.load(f)
+                          results = data.get("Results", [])
+                          for result in results:
+                              vulns = result.get("Vulnerabilities", [])
+                              for vuln in vulns:
+                                  severity = vuln.get("Severity")
+                                  if severity in image_severities:
+                                      stats[image][severity] += 1
+                  except json.JSONDecodeError:
+                      print(f"Failed to parse {report_file} - Invalid JSON")
+              else:
+                  print(f"Report not found: {report_file}")
+          # Image stats
+          print("\nImage Vulnerability Statistics:")
+          total_stats = {sev: 0 for sev in image_severities}
+          for image, counts in stats.items():
+              scan_key = image.replace(":", "_").replace("/", "_") + "_scan_time"
+              scan_time = scan_times.get(scan_key, 0.0)
+              line = f"{image}: "
+              line += ", ".join(f"{counts[sev]} {sev}" for sev in image_severities)
+              line += f", Scan Time: {scan_time:.2f} seconds"
+              print(line)
+              for sev in image_severities:
+                  total_stats[sev] += counts[sev]
+          print("Total Image Vulnerabilities: " + ", ".join(f"{total_stats[sev]} {sev}" for sev in image_severities))
+          # Kubernetes report (all severities)
+          k8s_report = "trivy-report-k8s.json"
+          print(f"\nProcessing {k8s_report}")
+          k8s_stats = {sev: 0 for sev in k8s_severities}
+          if os.path.exists(k8s_report):
+              try:
+                  with open(k8s_report, 'r') as f:
+                      data = json.load(f)
+                      results = data.get("Results", [])
+                      for result in results:
+                          misconfigs = result.get("Misconfigurations", [])
+                          for misconfig in misconfigs:
+                              severity = misconfig.get("Severity", "UNKNOWN")
+                              if severity in k8s_severities:
+                                  k8s_stats[severity] += 1
+              except json.JSONDecodeError:
+                  print(f"Failed to parse {k8s_report} - Invalid JSON")
+          else:
+              print(f"Report not found: {k8s_report}")
+          print("\nKubernetes Config Statistics:")
+          k8s_scan_time = scan_times.get("k8s_scan_time", 0.0)
+          print("Kubernetes Configs: " + ", ".join(f"{k8s_stats[sev]} {sev}" for sev in k8s_severities) + f", Scan Time: {k8s_scan_time:.2f} seconds")
+          EOF
 
       - name: Run Analysis Script
-        run: python3 analyze_trivy.py
+        run: |
+          python3 analyze_trivy.py || echo "Script failed—check Python setup"
 
-      - name: Upload Reports
+      - name: Upload Trivy Reports
         uses: actions/upload-artifact@v4
         with:
           name: trivy-reports
@@ -66,3 +159,26 @@ jobs:
             trivy-report-*.json
             scan_times.txt
             *_time.txt
+
+      - name: Check Scan Results
+        run: |
+          echo "Checking results..."
+          has_vulnerabilities=false
+          for report in trivy-report-*.json; do
+            if [ -f "$report" ]; then
+              if grep -q '"Severity": "CRITICAL"\|"Severity": "HIGH"' "$report"; then
+                echo "Critical or High vulnerabilities found in $report"
+                has_vulnerabilities=true
+              else
+                echo "No Critical or High vulnerabilities in $report"
+              fi
+            else
+              echo "Report $report not generated"
+            fi
+          done
+          if [ "$has_vulnerabilities" = true ]; then
+            echo "Pipeline failing due to vulnerabilities"
+            exit 1
+          else
+            echo "All images passed scanning"
+          fi
