@@ -49,12 +49,22 @@ def analyze_k8s_misconfigs(report_file):
 print("Container Image Statistics:")
 total_high = 0
 total_critical = 0
-with open("scan_times.txt", "r") as f:
-    scan_times = dict(line.strip().split() for line in f)
+scan_times = {}
+if os.path.exists("scan_times.txt"):
+    with open("scan_times.txt", "r") as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) == 2:  # Expect "name time"
+                scan_times[parts[0]] = parts[1]
+            else:
+                print(f"Skipping malformed line in scan_times.txt: {line.strip()}")
+else:
+    print("scan_times.txt not found - assuming 0 seconds for all scans")
 
 for image, report_file in image_reports.items():
     vuln_counts = count_vulnerabilities(report_file)
-    scan_time = float(scan_times.get(f"{image.replace(':', '_')}_scan_time", 0))
+    scan_key = image.replace(":", "_").replace("/", "_") + "_scan_time"  # e.g., httpd_2.4.49_scan_time
+    scan_time = float(scan_times.get(scan_key, 0))
     print(f"{image}: {vuln_counts['HIGH']} HIGH, {vuln_counts['CRITICAL']} CRITICAL, Scan Time: {scan_time:.2f} seconds")
     total_high += vuln_counts["HIGH"]
     total_critical += vuln_counts["CRITICAL"]

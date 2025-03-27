@@ -17,31 +17,31 @@ jobs:
 
       - name: Scan httpd image
         run: |
-          /usr/bin/time -f "httpd_2.4.49_scan_time %e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-httpd.json httpd:2.4.49 2>> scan_times.txt
+          /usr/bin/time -f "%e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-httpd.json httpd:2.4.49 2> >(echo "httpd_2.4.49_scan_time $(cat)" >> scan_times.txt)
 
       - name: Scan nginx image
         run: |
-          /usr/bin/time -f "nginx_1.15_scan_time %e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-nginx.json nginx:1.15 2>> scan_times.txt
+          /usr/bin/time -f "%e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-nginx.json nginx:1.15 2> >(echo "nginx_1.15_scan_time $(cat)" >> scan_times.txt)
 
       - name: Scan mysql image
         run: |
-          /usr/bin/time -f "mysql_5.5_scan_time %e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-mysql.json mysql:5.5 2>> scan_times.txt
+          /usr/bin/time -f "%e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-mysql.json mysql:5.5 2> >(echo "mysql_5.5_scan_time $(cat)" >> scan_times.txt)
 
       - name: Scan wordpress image
         run: |
-          /usr/bin/time -f "wordpress_4.9.8_scan_time %e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-wordpress.json wordpress:4.9.8 2>> scan_times.txt
+          /usr/bin/time -f "%e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-wordpress.json wordpress:4.9.8 2> >(echo "wordpress_4.9.8_scan_time $(cat)" >> scan_times.txt)
 
       - name: Scan web-dvwa image
         run: |
-          /usr/bin/time -f "vulnerables_web-dvwa_scan_time %e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-web-dvwa.json vulnerables/web-dvwa 2>> scan_times.txt
+          /usr/bin/time -f "%e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-web-dvwa.json vulnerables/web-dvwa 2> >(echo "vulnerables_web-dvwa_scan_time $(cat)" >> scan_times.txt)
 
       - name: Scan juice-shop image
         run: |
-          /usr/bin/time -f "bkimminich_juice-shop_scan_time %e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-juice-shop.json bkimminich/juice-shop 2>> scan_times.txt
+          /usr/bin/time -f "%e" trivy image --severity HIGH,CRITICAL -f json -o trivy-report-juice-shop.json bkimminich/juice-shop 2> >(echo "bkimminich_juice-shop_scan_time $(cat)" >> scan_times.txt)
 
       - name: Scan Kubernetes configs
         run: |
-          /usr/bin/time -f "k8s_scan_time %e" trivy config --severity LOW,MEDIUM,HIGH,CRITICAL -f json -o trivy-report-k8s.json k8s/ 2>> scan_times.txt
+          /usr/bin/time -f "%e" trivy config --severity LOW,MEDIUM,HIGH,CRITICAL -f json -o trivy-report-k8s.json k8s/ 2> >(echo "k8s_scan_time $(cat)" >> scan_times.txt)
 
       - name: Install Python
         run: |
